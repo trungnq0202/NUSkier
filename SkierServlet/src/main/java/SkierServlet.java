@@ -28,7 +28,8 @@ public class SkierServlet extends HttpServlet {
             resp.getWriter().write("{\"message\":\"Invalid URL format\"}");
         } else {
             resp.setStatus(HttpServletResponse.SC_OK);
-            resp.getWriter().write("{\"message\":\"GET request is valid! Returning dummy vertical data\"}");
+            int vertical = 12345;  // Dummy data
+            resp.getWriter().write(String.valueOf(vertical));
         }
     }
 
@@ -64,7 +65,6 @@ public class SkierServlet extends HttpServlet {
 
         // If everything is valid
         resp.setStatus(HttpServletResponse.SC_CREATED);
-        resp.getWriter().write("{\"message\":\"POST request is valid! Returning dummy vertical data\"}");
     }
 
     private boolean isGetUrlValid(String[] urlParts) {
