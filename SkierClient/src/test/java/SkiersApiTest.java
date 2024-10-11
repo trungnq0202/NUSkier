@@ -1,19 +1,17 @@
+import io.swagger.client.ApiClient;
 import io.swagger.client.api.SkiersApi;
 import io.swagger.client.model.LiftRide;
-import io.swagger.client.model.SkierVertical;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.util.List;
-
+import static org.junit.Assert.assertEquals;
 
 /**
  * API tests for SkiersApi
  */
 @Ignore
 public class SkiersApiTest {
-
-    private final SkiersApi api = new SkiersApi();
+    ApiClient apiClient = new ApiClient().setBasePath(Config.getBasePath());
+    private final SkiersApi api = new SkiersApi(apiClient);
 
     /**
      * get ski day vertical for a skier
@@ -32,7 +30,10 @@ public class SkiersApiTest {
         Integer response = api.getSkierDayVertical(resortID, seasonID, dayID, skierID);
 
         System.out.println(response);  // Print or validate response
-        // TODO: add validations
+
+        // Check for dummy data
+        assertEquals("The vertical should be 12345", Integer.valueOf(12345), response);
+        System.out.println("getSkierDayVerticalTest() passed!");
     }
 
     /**
@@ -55,31 +56,6 @@ public class SkiersApiTest {
         Integer skierID = 123;  // Replace with actual skier ID
         api.writeNewLiftRide(body, resortID, seasonID, dayID, skierID);
 
-        System.out.println("Lift ride recorded successfully.");
-        // TODO: add validations
+        System.out.println("writeNewLiftRideTest() passed!");
     }
-
-
-
-    /**
-     * get the total vertical for the skier for specified seasons at the specified resort
-     *
-     * get the total vertical for the skier the specified resort. If no season is specified, return all seasons
-     *
-     * @throws Exception
-     *          if the Api call fails
-     */
-//    @Test
-//    public void getSkierResortTotalsTest() throws Exception {
-//        Integer skierID = null;
-//        List<String> resort = null;
-//        List<String> season = null;
-//        SkierVertical response = api.getSkierResortTotals(skierID, resort, season);
-//
-//        // TODO: test validations
-//        System.out.println(response);
-//    }
-
-
-
 }
