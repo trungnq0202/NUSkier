@@ -64,7 +64,7 @@ public class ThreadBenchmark {
             activeThreads.decrementAndGet();  // Decrease active thread count
 
             // Only submit new threads if we haven't exceeded the maxThreads limit
-            while (activeThreads.get() < maxThreads && requestsSent.get() < TOTAL_REQUESTS) {
+            while (activeThreads.get() < maxThreads + 2 && requestsSent.get() < TOTAL_REQUESTS) {
                 submitTask(completionService, eventQueue, BATCH_REQUESTS, failedRequests, requestsSent, activeThreads, requestMetricsList);
             }
         }

@@ -33,7 +33,7 @@ public class MetricsUtils {
         // Display the calculated metrics
         System.out.println("------------------------------------------------------------------------");
         System.out.println("Total run time: " + totalTime + " ms");
-        System.out.println("Total requests: " + totalRequests);
+        System.out.println("Successful requests: " + totalRequests);
         System.out.println("Unsuccessful requests: " + failedRequests);
         System.out.println("Throughput: " + throughput + " requests/second");
         System.out.println("Mean response time: " + meanLatency + " ms");

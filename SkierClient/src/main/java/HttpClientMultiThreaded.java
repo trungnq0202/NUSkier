@@ -10,9 +10,9 @@ import java.util.*;
 public class HttpClientMultiThreaded {
     public static final int TOTAL_REQUESTS = 200000;
     public static final int INITIAL_THREADS = 32;
-    public static final int MAX_THREADS = 64;
+    public static final int MAX_THREADS = 80;
     public static final int INITIAL_REQUESTS_PER_THREAD = 1000;
-    public static final int FINAL_REQUESTS_PER_THREAD = 1000;
+    public static final int FINAL_REQUESTS_PER_THREAD = 1500;
     public static final int MAX_RETRIES = 5;
 
     public static void main(String[] args) throws InterruptedException, ExecutionException, IOException {
@@ -21,12 +21,12 @@ public class HttpClientMultiThreaded {
         AtomicInteger activeThreads = new AtomicInteger(0);// Tracks active threads
         List<RequestMetrics> requestMetricsList = Collections.synchronizedList(new ArrayList<>());
 
-        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(500);
+        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(1000);
 
         // Strictly limit thread creation with ThreadPoolExecutor
         ExecutorService executorService = new ThreadPoolExecutor(
-                MAX_THREADS,
-                MAX_THREADS,
+                MAX_THREADS + 20,
+                MAX_THREADS + 20,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(500),
                 new ThreadPoolExecutor.CallerRunsPolicy()
@@ -52,9 +52,11 @@ public class HttpClientMultiThreaded {
             activeThreads.decrementAndGet();  // Decrease active thread count
 
             // Only submit new threads if we haven't exceeded the MAX_THREADS limit
-            while (activeThreads.get() < MAX_THREADS && requestsSent.get() < TOTAL_REQUESTS) {
+            while (activeThreads.get() < MAX_THREADS + 20 && requestsSent.get() < TOTAL_REQUESTS) {
                 submitTask(completionService, eventQueue, FINAL_REQUESTS_PER_THREAD, failedRequests, requestsSent, activeThreads, requestMetricsList);
             }
+
+            Thread.sleep(5);
         }
 
         producerThread.join();
