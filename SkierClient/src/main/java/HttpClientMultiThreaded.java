@@ -11,6 +11,7 @@ public class HttpClientMultiThreaded {
     public static final int TOTAL_REQUESTS = 200000;
     public static final int INITIAL_THREADS = 32;
     public static final int MAX_THREADS = 80;
+    public static final int TOTAL_THREADS = MAX_THREADS + INITIAL_THREADS;
     public static final int INITIAL_REQUESTS_PER_THREAD = 1000;
     public static final int FINAL_REQUESTS_PER_THREAD = 1500;
     public static final int MAX_RETRIES = 5;
@@ -52,7 +53,7 @@ public class HttpClientMultiThreaded {
             activeThreads.decrementAndGet();  // Decrease active thread count
 
             // Only submit new threads if we haven't exceeded the MAX_THREADS limit
-            while (activeThreads.get() < MAX_THREADS + 20 && requestsSent.get() < TOTAL_REQUESTS) {
+            while (activeThreads.get() < TOTAL_THREADS + 20 && requestsSent.get() < TOTAL_REQUESTS) {
                 submitTask(completionService, eventQueue, FINAL_REQUESTS_PER_THREAD, failedRequests, requestsSent, activeThreads, requestMetricsList);
             }
 

@@ -12,7 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class ThreadBenchmark {
     public static final int TOTAL_REQUESTS = 200000;
     public static final int INITIAL_THREADS = 32;
-    public static final int BATCH_REQUESTS = 500;
+    public static final int BATCH_REQUESTS = 1500;
     public static final int MAX_RETRIES = 5;
 
     public static void main(String[] args) throws InterruptedException, ExecutionException {
@@ -33,12 +33,12 @@ public class ThreadBenchmark {
         AtomicInteger activeThreads = new AtomicInteger(0); // Tracks active threads
         List<RequestMetrics> requestMetricsList = Collections.synchronizedList(new ArrayList<>()); // Store metrics for each request
 
-        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(200);
+        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(1000);
 
         // Strictly limit thread creation with ThreadPoolExecutor
         ExecutorService executorService = new ThreadPoolExecutor(
-                maxThreads,
-                maxThreads,
+                maxThreads + 20,
+                maxThreads + 20,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(500),
                 new ThreadPoolExecutor.CallerRunsPolicy()
@@ -64,7 +64,7 @@ public class ThreadBenchmark {
             activeThreads.decrementAndGet();  // Decrease active thread count
 
             // Only submit new threads if we haven't exceeded the maxThreads limit
-            while (activeThreads.get() < maxThreads + 2 && requestsSent.get() < TOTAL_REQUESTS) {
+            while (activeThreads.get() < maxThreads + 20 && requestsSent.get() < TOTAL_REQUESTS) {
                 submitTask(completionService, eventQueue, BATCH_REQUESTS, failedRequests, requestsSent, activeThreads, requestMetricsList);
             }
         }
