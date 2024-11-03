@@ -20,7 +20,6 @@ public class ThreadBenchmark {
 //        int[] maxThreadCounts = {32, 48, 60, 72, 84, 96, 108, 120, 132};
         int[] maxThreadCounts = {32, 64, 128, 256, 512, 1024};
 
-
         for (int maxThreads : maxThreadCounts) {
             System.out.println("Benchmarking with maxThreads = " + maxThreads);
             runBenchmarkWithMaxThreads(maxThreads);
@@ -76,7 +75,7 @@ public class ThreadBenchmark {
         long endTime = System.currentTimeMillis();
         long totalTime = endTime - startTime;
 
-        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, totalTime, requestsSent.get(), failedRequests.get());
+        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, maxThreads, totalTime, requestsSent.get(), failedRequests.get());
     }
 
     private static void submitTask(

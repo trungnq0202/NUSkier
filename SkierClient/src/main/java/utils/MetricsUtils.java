@@ -9,7 +9,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class MetricsUtils {
-    public static void calculateAndDisplayMetrics(List<RequestMetrics> metrics, long totalTime, int totalRequests, int failedRequests) {
+    public static void calculateAndDisplayMetrics(List<RequestMetrics> metrics, int numThreads, long totalTime, int totalRequests, int failedRequests) {
         double sumLatency = 0;
         long minLatency = Long.MAX_VALUE;
         long maxLatency = Long.MIN_VALUE;
@@ -32,8 +32,9 @@ public class MetricsUtils {
 
         // Display the calculated metrics
         System.out.println("------------------------------------------------------------------------");
+        System.out.println("Total number of threads: " + numThreads);
         System.out.println("Total run time: " + totalTime + " ms");
-        System.out.println("Successful requests: " + totalRequests);
+        System.out.println("Total requests: " + totalRequests);
         System.out.println("Unsuccessful requests: " + failedRequests);
         System.out.println("Throughput: " + throughput + " requests/second");
         System.out.println("Mean response time: " + meanLatency + " ms");

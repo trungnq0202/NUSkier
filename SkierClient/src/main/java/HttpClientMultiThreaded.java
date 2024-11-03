@@ -10,7 +10,7 @@ import java.util.*;
 public class HttpClientMultiThreaded {
     public static final int TOTAL_REQUESTS = 200000;
     public static final int INITIAL_THREADS = 32;
-    public static final int MAX_THREADS = 80;
+    public static final int MAX_THREADS = 400;
     public static final int TOTAL_THREADS = MAX_THREADS + INITIAL_THREADS;
     public static final int INITIAL_REQUESTS_PER_THREAD = 1000;
     public static final int FINAL_REQUESTS_PER_THREAD = 1500;
@@ -22,16 +22,17 @@ public class HttpClientMultiThreaded {
         AtomicInteger activeThreads = new AtomicInteger(0);// Tracks active threads
         List<RequestMetrics> requestMetricsList = Collections.synchronizedList(new ArrayList<>());
 
-        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(1000);
+        BlockingQueue<LiftRideUpdate> eventQueue = new LinkedBlockingQueue<>(80000);
 
         // Strictly limit thread creation with ThreadPoolExecutor
         ExecutorService executorService = new ThreadPoolExecutor(
                 MAX_THREADS + 20,
                 MAX_THREADS + 20,
                 60L, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(500),
+                new LinkedBlockingQueue<>(200),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
+
         CompletionService<Void> completionService = new ExecutorCompletionService<>(executorService);
 
         long startTime = System.currentTimeMillis();
@@ -68,7 +69,7 @@ public class HttpClientMultiThreaded {
         long totalTime = endTime - startTime;
 
         // Calculate and display metrics
-        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, totalTime, requestsSent.get(), failedRequests.get());
+        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, MAX_THREADS, totalTime, requestsSent.get(), failedRequests.get());
 
         // Write metrics to CSV
         MetricsUtils.writeMetricsToCSV(requestMetricsList, "request_metrics.csv");
