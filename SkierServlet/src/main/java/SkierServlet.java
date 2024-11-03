@@ -3,7 +3,6 @@ import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
 import model.LiftRide;
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -16,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 @WebServlet(value = "/skiers/*")
 public class SkierServlet extends HttpServlet {
     private static final int CHANNEL_POOL_SIZE = 20;
+
     private static final String QUEUE_NAME = "skiersQueue";
     private final Gson gson = new Gson();
 
@@ -27,7 +27,11 @@ public class SkierServlet extends HttpServlet {
         try {
             // Set up RabbitMQ connection
             ConnectionFactory factory = new ConnectionFactory();
-            factory.setHost("localhost"); // Adjust host as necessary
+            factory.setHost(Config.getRMQHost()); // Adjust host as necessary
+            factory.setUsername(Config.getRMQUsername());
+            factory.setPassword(Config.getRMQPassword());
+            factory.setPort(Config.getRMQPort());
+
             connection = factory.newConnection();
 
             // Initialize RMQChannelPool with default pool settings
@@ -48,7 +52,6 @@ public class SkierServlet extends HttpServlet {
             e.printStackTrace();
         }
     }
-
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -192,6 +195,7 @@ public class SkierServlet extends HttpServlet {
             // Borrow a channel from the pool
             Channel channel = channelPool.borrowObject();
             try {
+//                channel.queueDeclare(QUEUE_NAME, true, false, false, null);
                 channel.basicPublish("", QUEUE_NAME, null, message.getBytes(StandardCharsets.UTF_8));
             } finally {
                 channelPool.returnObject(channel); // Return channel to the pool

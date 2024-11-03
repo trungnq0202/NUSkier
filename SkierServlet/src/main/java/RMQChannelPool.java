@@ -22,7 +22,6 @@ public class RMQChannelPool {
     // used to ceate channels
     private RMQChannelFactory factory;
 
-
     public RMQChannelPool(int maxSize, RMQChannelFactory factory) {
         this.capacity = maxSize;
         pool = new LinkedBlockingQueue<>(capacity);
