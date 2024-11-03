@@ -1,12 +1,25 @@
+import com.google.gson.Gson;
+import com.rabbitmq.client.Channel;
+import com.rabbitmq.client.Connection;
+import com.rabbitmq.client.ConnectionFactory;
+import model.LiftRide;
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @WebServlet(value = "/skiers/*")
 public class SkierServlet extends HttpServlet {
+    private static final String QUEUE_NAME = "skiersQueue";
+    private final Gson gson = new Gson();
+
+    private Connection connection;
+    private RMQChannelPool channelPool;
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -64,7 +77,16 @@ public class SkierServlet extends HttpServlet {
         }
 
         // If everything is valid
-        resp.setStatus(HttpServletResponse.SC_CREATED);
+        try {
+//            LiftRide liftRide = new LiftRide(urlParts, jsonBody);
+//            sendToQueue(gson.toJson(liftRide));
+            sendToQueue(""); //////////////////// DEBUG //////////////////////////
+            resp.setStatus(HttpServletResponse.SC_CREATED);
+        } catch (Exception e) {
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            resp.getWriter().write("{\"message\":\"Failed to send data to the queue\"}");
+//            e.printStackTrace();
+        }
     }
 
     private boolean isGetUrlValid(String[] urlParts) {
@@ -134,5 +156,19 @@ public class SkierServlet extends HttpServlet {
         }
 
         return true;
+    }
+
+
+    private void sendToQueue(String message) {
+        ConnectionFactory factory = new ConnectionFactory();
+        factory.setHost("localhost"); // Use 'localhost' for local setup
+
+        try (Connection connection = factory.newConnection();
+             Channel channel = connection.createChannel()) {
+            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
+            channel.basicPublish("", QUEUE_NAME, null, message.getBytes(StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
