@@ -1,3 +1,9 @@
+/**
+ *
+ * @author Ian Gorton, Northeastern University
+ * The examples supplement Chapter 7 of the Foundations of Scalable Systems, O'Reilly Media 2022
+ */
+
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 

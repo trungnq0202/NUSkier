@@ -15,11 +15,40 @@ import java.nio.charset.StandardCharsets;
 
 @WebServlet(value = "/skiers/*")
 public class SkierServlet extends HttpServlet {
+    private static final int CHANNEL_POOL_SIZE = 20;
     private static final String QUEUE_NAME = "skiersQueue";
     private final Gson gson = new Gson();
 
     private Connection connection;
     private RMQChannelPool channelPool;
+
+    @Override
+    public void init() {
+        try {
+            // Set up RabbitMQ connection
+            ConnectionFactory factory = new ConnectionFactory();
+            factory.setHost("localhost"); // Adjust host as necessary
+            connection = factory.newConnection();
+
+            // Initialize RMQChannelPool with default pool settings
+            channelPool = new RMQChannelPool(CHANNEL_POOL_SIZE, new RMQChannelFactory(connection));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void destroy() {
+        try {
+            channelPool.close(); // Close all pooled channels
+            if (connection != null && connection.isOpen()) {
+                connection.close(); // Close RabbitMQ connection
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -78,9 +107,8 @@ public class SkierServlet extends HttpServlet {
 
         // If everything is valid
         try {
-//            LiftRide liftRide = new LiftRide(urlParts, jsonBody);
-//            sendToQueue(gson.toJson(liftRide));
-            sendToQueue(""); //////////////////// DEBUG //////////////////////////
+            LiftRide liftRide = new LiftRide(urlParts, jsonBody);
+            sendToQueue(gson.toJson(liftRide));
             resp.setStatus(HttpServletResponse.SC_CREATED);
         } catch (Exception e) {
             resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
@@ -160,13 +188,14 @@ public class SkierServlet extends HttpServlet {
 
 
     private void sendToQueue(String message) {
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost"); // Use 'localhost' for local setup
-
-        try (Connection connection = factory.newConnection();
-             Channel channel = connection.createChannel()) {
-            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
-            channel.basicPublish("", QUEUE_NAME, null, message.getBytes(StandardCharsets.UTF_8));
+        try {
+            // Borrow a channel from the pool
+            Channel channel = channelPool.borrowObject();
+            try {
+                channel.basicPublish("", QUEUE_NAME, null, message.getBytes(StandardCharsets.UTF_8));
+            } finally {
+                channelPool.returnObject(channel); // Return channel to the pool
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
