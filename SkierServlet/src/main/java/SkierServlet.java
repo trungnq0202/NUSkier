@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 
 @WebServlet(value = "/skiers/*")
 public class SkierServlet extends HttpServlet {
-    private static final int CHANNEL_POOL_SIZE = 20;
+    private static final int CHANNEL_POOL_SIZE = 200;
 
     private static final String QUEUE_NAME = "skiersQueue";
     private final Gson gson = new Gson();

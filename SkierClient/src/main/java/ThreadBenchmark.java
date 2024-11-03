@@ -75,7 +75,7 @@ public class ThreadBenchmark {
         long endTime = System.currentTimeMillis();
         long totalTime = endTime - startTime;
 
-        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, totalTime, requestsSent.get(), failedRequests.get());
+        MetricsUtils.calculateAndDisplayMetrics(requestMetricsList, maxThreads, totalTime, requestsSent.get(), failedRequests.get());
     }
 
     private static void submitTask(
