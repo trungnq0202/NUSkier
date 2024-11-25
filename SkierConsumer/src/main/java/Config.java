@@ -27,4 +27,16 @@ public class Config {
     public static String getRMQPassword() {
         return properties.getProperty("rabbitmq.password");
     }
+
+    public static String getRedisHost() {
+        return properties.getProperty("redis.host");
+    }
+
+    public static int getRedisPort() {
+        return Integer.parseInt(properties.getProperty("redis.port"));
+    }
+
+    public static String getRedisPassword() {
+        return properties.getProperty("redis.password");
+    }
 }
