@@ -8,7 +8,7 @@ public class RandomGenerator {
     }
 
     public static Integer generateResortID() {
-        return random.nextInt(10) + 1;  // ResortID between 1 and 10
+        return 1;
     }
 
     public static Integer generateLiftID() {
@@ -16,11 +16,11 @@ public class RandomGenerator {
     }
 
     public static Integer generateSeasonID() {
-        return 2024;  // SeasonID is fixed at 2024
+        return 2024;  // SeasonID is constant at 2024
     }
 
     public static Integer generateDayID() {
-        return 1;  // DayID is fixed at 1
+        return 3;
     }
 
     public static Integer generateTime() {
