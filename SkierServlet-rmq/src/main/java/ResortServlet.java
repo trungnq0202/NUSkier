@@ -3,7 +3,6 @@ import com.rabbitmq.client.AMQP;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
-import model.LiftRide;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -12,12 +11,13 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 @WebServlet(value = "/resorts/*")
 public class ResortServlet extends HttpServlet {
-    private static final int CHANNEL_POOL_SIZE = 200;
+    private static final int CHANNEL_POOL_SIZE = 100;
 
     // RabbitMQ constants
     private static final String GET_QUEUE_NAME = "skiersGetQueue";
@@ -40,8 +40,6 @@ public class ResortServlet extends HttpServlet {
             factory.setPort(Config.getRMQPort());
 
             connection = factory.newConnection();
-
-            // Initialize RMQChannelPool with default pool settings
             channelPool = new RMQChannelPool(CHANNEL_POOL_SIZE, new RMQChannelFactory(connection));
         } catch (Exception e) {
             e.printStackTrace();
@@ -65,7 +63,7 @@ public class ResortServlet extends HttpServlet {
         resp.setContentType("application/json");
         String urlPath = req.getPathInfo();
 
-        // Check we have a URL
+        // Check if we have a URL
         if (urlPath == null || urlPath.isEmpty()) {
             resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             resp.getWriter().write("{\"message\":\"Missing parameters\"}");
@@ -88,68 +86,85 @@ public class ResortServlet extends HttpServlet {
                 ));
 
                 String response = sendGetRequestToQueue(requestPayload);
-                Map<String, Object> responseMap = gson.fromJson(response, Map.class);
 
+                if (response == null) {
+                    // Timeout occurred
+                    resp.setStatus(HttpServletResponse.SC_GATEWAY_TIMEOUT);
+                    resp.getWriter().write("{\"message\":\"Request timed out\"}");
+                    return;
+                }
+
+                Map<String, Object> responseMap = gson.fromJson(response, Map.class);
                 int responseCode = ((Double) responseMap.getOrDefault("response_code", 500)).intValue();
                 resp.setStatus(responseCode);
 
                 if (responseCode == 200) {
                     resp.getWriter().write(response);
-                } else if (responseCode == 404) {
-                    String errorMessage = (String) responseMap.get("message");
+                } else {
+                    String errorMessage = (String) responseMap.getOrDefault("message", "Unknown error");
                     resp.getWriter().write(gson.toJson(Map.of(
                             "message", errorMessage
                     )));
                 }
-
             } catch (Exception e) {
                 resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-                System.out.println(e.getMessage());
-                resp.getWriter().write("{\"message\":\"Failed to process GET DAY VERTICAL request\"}");
+                System.err.println("Error processing GET request: " + e.getMessage());
+                resp.getWriter().write("{\"message\":\"Failed to process GET UNIQUE SKIERS request\"}");
             }
-
-        }
-        else {
+        } else {
             // Invalid URL length
             resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             resp.getWriter().write("{\"message\":\"Invalid URL format\"}");
         }
-
-
     }
 
     private String sendGetRequestToQueue(String message) throws Exception {
-        try (Channel channel = channelPool.borrowObject()) {
-            String correlationId = java.util.UUID.randomUUID().toString();
+        Channel channel = null;
+        final long TIMEOUT_MS = 15000; // Timeout duration in milliseconds
+        final String correlationId = java.util.UUID.randomUUID().toString();
 
-            // Set up the message properties with reply-to and correlation ID
+        try {
+            channel = channelPool.borrowObject(); // Borrow channel from pool
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .correlationId(correlationId)
-                    .replyTo(GET_RESPONSE_QUEUE_NAME) // Use shared reply queue
+                    .replyTo(GET_RESPONSE_QUEUE_NAME)
                     .build();
 
-//            channel.queueDeclare(GET_QUEUE_NAME, true, false, false, null);
-//            channel.queueDeclare(GET_RESPONSE_QUEUE_NAME, true, false, false, null);
-
-            // Publish the GET request to the RabbitMQ queue
             channel.basicPublish("", GET_QUEUE_NAME, props, message.getBytes(StandardCharsets.UTF_8));
+            System.out.println("Published request with correlationId: " + correlationId);
 
-            // Wait for the response from the shared reply queue
             final String[] responseHolder = new String[1];
-            channel.basicConsume(GET_RESPONSE_QUEUE_NAME, true, (consumerTag, delivery) -> {
-                if (delivery.getProperties().getCorrelationId().equals(correlationId)) {
-                    responseHolder[0] = new String(delivery.getBody(), StandardCharsets.UTF_8);
-                }
-            }, consumerTag -> {});
+            CountDownLatch latch = new CountDownLatch(1);
 
-            // Poll for the response (timeout logic can be added if needed)
-            while (responseHolder[0] == null) {
-                Thread.sleep(10); // Sleep for a short duration to wait for the response
+            String consumerTag = channel.basicConsume(GET_RESPONSE_QUEUE_NAME, true, (consumerTag1, delivery) -> {
+                if (correlationId.equals(delivery.getProperties().getCorrelationId())) {
+                    responseHolder[0] = new String(delivery.getBody(), StandardCharsets.UTF_8);
+                    latch.countDown();
+                }
+            }, consumerTag1 -> {
+                System.err.println("Consumer canceled: " + consumerTag1);
+            });
+
+            // Wait for response or timeout
+            if (!latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                channel.basicCancel(consumerTag);
+                System.err.println("Timeout waiting for response with correlationId: " + correlationId);
+                return null;
             }
 
+            channel.basicCancel(consumerTag);
             return responseHolder[0];
+        } catch (Exception e) {
+            System.err.println("Error in sendGetRequestToQueue: " + e.getMessage());
+            throw e;
+        } finally {
+            if (channel != null) {
+                channelPool.returnObject(channel);
+            }
         }
     }
+
+
 
 }
