@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 
 @WebServlet(value = "/resorts/*")
 public class ResortServlet extends HttpServlet {
-    private static final int CHANNEL_POOL_SIZE = 100;
+    private static final int CHANNEL_POOL_SIZE = 200;
 
     // RabbitMQ constants
     private static final String GET_QUEUE_NAME = "skiersGetQueue";
@@ -125,29 +125,36 @@ public class ResortServlet extends HttpServlet {
 
         try {
             channel = channelPool.borrowObject(); // Borrow channel from pool
+
+            // Create a unique, temporary reply queue for this request
+            String replyQueueName = channel.queueDeclare("", false, true, true, null).getQueue();
+
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .correlationId(correlationId)
-                    .replyTo(GET_RESPONSE_QUEUE_NAME)
+                    .replyTo(replyQueueName)
                     .build();
 
+            // Publish request to the request queue
             channel.basicPublish("", GET_QUEUE_NAME, props, message.getBytes(StandardCharsets.UTF_8));
             System.out.println("Published request with correlationId: " + correlationId);
 
             final String[] responseHolder = new String[1];
             CountDownLatch latch = new CountDownLatch(1);
 
-            String consumerTag = channel.basicConsume(GET_RESPONSE_QUEUE_NAME, true, (consumerTag1, delivery) -> {
+            // Consume from the temporary reply queue
+            String consumerTag = channel.basicConsume(replyQueueName, true, (ct, delivery) -> {
                 if (correlationId.equals(delivery.getProperties().getCorrelationId())) {
                     responseHolder[0] = new String(delivery.getBody(), StandardCharsets.UTF_8);
                     latch.countDown();
                 }
-            }, consumerTag1 -> {
-                System.err.println("Consumer canceled: " + consumerTag1);
+            }, ct -> {
+                System.err.println("Consumer canceled: " + ct);
             });
 
             // Wait for response or timeout
             if (!latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                // Timeout
                 channel.basicCancel(consumerTag);
                 System.err.println("Timeout waiting for response with correlationId: " + correlationId);
                 return null;
@@ -164,7 +171,4 @@ public class ResortServlet extends HttpServlet {
             }
         }
     }
-
-
-
 }

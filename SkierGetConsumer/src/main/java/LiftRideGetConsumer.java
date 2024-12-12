@@ -1,5 +1,6 @@
 import com.google.gson.Gson;
 import com.rabbitmq.client.*;
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -31,7 +32,7 @@ public class LiftRideGetConsumer {
     // Connections
     private Connection connection;
     private RMQChannelPool channelPool;
-//    private JedisPool jedisPool; // Redis connection pool
+    private JedisPool jedisPool; // Redis connection pool
     private DynamoDbClient dynamoDbClient;
     private final Gson gson = new Gson();
 
@@ -54,7 +55,7 @@ public class LiftRideGetConsumer {
             connection = factory.newConnection();
 
             channelPool = new RMQChannelPool(RMQ_CHANNEL_POOL_SIZE, new RMQChannelFactory(connection));
-//            jedisPool = RedisConnectionManager.getJedisPool();
+            jedisPool = RedisConnectionManager.getJedisPool();
 
             // Initialize DynamoDB client
             Region region = Region.US_WEST_2;
@@ -78,17 +79,28 @@ public class LiftRideGetConsumer {
             Channel channel = channelPool.borrowObject();
             channel.basicConsume(GET_QUEUE_NAME, true, (consumerTag, delivery) -> {
                 String message = new String(delivery.getBody(), StandardCharsets.UTF_8);
-
                 Map<String, Object> request = gson.fromJson(message, Map.class);
                 String response = processGetRequest(request);
-                String correlationId = delivery.getProperties().getCorrelationId();
 
-                try {
-                    channel.basicPublish("", GET_RESPONSE_QUEUE_NAME, new AMQP.BasicProperties.Builder()
-                            .correlationId(correlationId) // Include the same correlation ID for tracking
-                            .build(), response.getBytes(StandardCharsets.UTF_8));
-                } catch (Exception e) {
-                    System.err.println("Error sending response to shared reply queue: " + e.getMessage());
+                String correlationId = delivery.getProperties().getCorrelationId();
+                String replyTo = delivery.getProperties().getReplyTo();  // Dynamic reply queue
+
+                // Ensure we have a valid replyTo queue
+                if (replyTo != null && !replyTo.isEmpty()) {
+                    try {
+                        channel.basicPublish(
+                                "",
+                                replyTo,
+                                new AMQP.BasicProperties.Builder()
+                                        .correlationId(correlationId)
+                                        .build(),
+                                response.getBytes(StandardCharsets.UTF_8)
+                        );
+                    } catch (Exception e) {
+                        System.err.println("Error sending response to dynamic reply queue: " + e.getMessage());
+                    }
+                } else {
+                    System.err.println("No replyTo queue specified. Unable to send response.");
                 }
             }, consumerTag -> {
                 System.out.println("Consumer " + consumerTag + " canceled");
@@ -129,12 +141,19 @@ public class LiftRideGetConsumer {
         String dayID = (String) request.get("dayID");
 
         String gsiPK = "RESORT#" + resortID + "#SEASON#" + seasonID + "#DAY#" + dayID;
+        String redisKey = "uniqueSkiers:" + gsiPK; // Redis cache key
 
-        try {
-            // Use a projection expression to only retrieve PK
+        try (Jedis jedis = jedisPool.getResource()) {
+            // Check Redis for cached data
+            String cachedResult = jedis.get(redisKey);
+            if (cachedResult != null) {
+                return cachedResult; // Return cached result
+            }
+
+            // Cache miss: Query DynamoDB
             QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(TABLE_NAME)
-                    .indexName("GSI_PK-index") // Use the GSI
+                    .indexName("GSI_PK-index")
                     .keyConditionExpression("GSI_PK = :gsiPK")
                     .projectionExpression("PK")
                     .expressionAttributeValues(Map.of(
@@ -155,11 +174,18 @@ public class LiftRideGetConsumer {
 
             long numUniqueSkiers = uniqueSkiers.size();
 
-            return gson.toJson(Map.of(
+            // Create the response JSON
+            String responseJson = gson.toJson(Map.of(
                     "resort", resortID,
                     "numSkiers", numUniqueSkiers,
                     "response_code", 200
             ));
+
+            // Cache the result in Redis with a TTL (e.g., 5 minutes)
+            jedis.setex(redisKey, 1000, responseJson);
+
+            return responseJson;
+
         } catch (Exception e) {
             e.printStackTrace();
             return gson.toJson(Map.of(
@@ -168,6 +194,7 @@ public class LiftRideGetConsumer {
             ));
         }
     }
+
 
 
     // API2: GET/skiers/{resortID}/seasons/{seasonID}/days/{dayID}/skiers/{skierID}: get ski day vertical for a skier
