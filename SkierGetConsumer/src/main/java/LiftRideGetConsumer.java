@@ -13,7 +13,7 @@ import java.util.concurrent.Executors;
 public class LiftRideGetConsumer {
     private static final String GET_QUEUE_NAME = "skiersGetQueue";
     private static final int RMQ_CHANNEL_POOL_SIZE = 100;
-    private static final int NUM_CONSUMER_THREADS = 800;
+    private static final int NUM_CONSUMER_THREADS = 600;
     private static final int BATCH_SIZE = 25;  // Number of messages per Redis batch
     private static final int MAX_RETRIES = 5;  // Retry attempts for Redis operations
 
@@ -124,32 +124,37 @@ public class LiftRideGetConsumer {
 
     // API 1: /resorts/{resortID}/seasons/{seasonID}/day/{dayID}/skiers
     private String getNumUniqueSkiers(Map<String, Object> request) {
-        // Extract required parameters from the request
         String resortID = (String) request.get("resortID");
         String seasonID = (String) request.get("seasonID");
         String dayID = (String) request.get("dayID");
 
-        // Construct GSI_PK for the query
         String gsiPK = "RESORT#" + resortID + "#SEASON#" + seasonID + "#DAY#" + dayID;
 
         try {
-            // Query DynamoDB using the GSI
-            QueryResponse result = dynamoDbClient.query(QueryRequest.builder()
+            // Use a projection expression to only retrieve PK
+            QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(TABLE_NAME)
-                    .indexName("GSI_PK-index") // Use the GSI to query
+                    .indexName("GSI_PK-index") // Use the GSI
                     .keyConditionExpression("GSI_PK = :gsiPK")
+                    .projectionExpression("PK")
                     .expressionAttributeValues(Map.of(
                             ":gsiPK", AttributeValue.builder().s(gsiPK).build()
                     ))
-                    .build());
+                    .build();
 
-            // Count the number of unique skiers based on the primary keys (PK)
-            long numUniqueSkiers = result.items().stream()
-                    .map(item -> item.get("PK").s()) // Extract the PK (skierID) field
-                    .distinct()
-                    .count();
+            QueryResponse result = dynamoDbClient.query(queryRequest);
 
-            // Return the result as a JSON response
+            // Use a HashSet for distinct PK counting
+            Set<String> uniqueSkiers = new HashSet<>();
+            for (Map<String, AttributeValue> item : result.items()) {
+                AttributeValue pkAttr = item.get("PK");
+                if (pkAttr != null && pkAttr.s() != null) {
+                    uniqueSkiers.add(pkAttr.s());
+                }
+            }
+
+            long numUniqueSkiers = uniqueSkiers.size();
+
             return gson.toJson(Map.of(
                     "resort", resortID,
                     "numSkiers", numUniqueSkiers,
@@ -157,7 +162,6 @@ public class LiftRideGetConsumer {
             ));
         } catch (Exception e) {
             e.printStackTrace();
-            // Return error response with type and message
             return gson.toJson(Map.of(
                     "response_code", 500,
                     "message", "Error retrieving number of unique skiers"
