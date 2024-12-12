@@ -18,7 +18,7 @@ public class LiftRideGetConsumer {
     private static final int MAX_RETRIES = 5;  // Retry attempts for Redis operations
 
     // DynamoDB constants
-    private static final String TABLE_NAME = "SkierTable";
+    private static final String TABLE_NAME = "SkierNewTable";
     private static final String PartitionKey = "PK";
     private static final String SortKey = "SK";
 
@@ -102,7 +102,7 @@ public class LiftRideGetConsumer {
     private String processGetRequest(Map<String, Object> request) {
         try {
             String type = (String) request.get("type");
-            System.out.println("Request type: " + type);
+//            System.out.println("Request type: " + type);
             if (GET_TOTAL_DAY_VERTICAL_MESSAGE_KEY.equals(type)) {
                 return getDayVertical(request);
             }
@@ -124,53 +124,43 @@ public class LiftRideGetConsumer {
 
     // API 1: /resorts/{resortID}/seasons/{seasonID}/day/{dayID}/skiers
     private String getNumUniqueSkiers(Map<String, Object> request) {
-        // Parse parameters from the request
+        // Extract required parameters from the request
         String resortID = (String) request.get("resortID");
         String seasonID = (String) request.get("seasonID");
         String dayID = (String) request.get("dayID");
 
-        // Validate required parameters
-        if (resortID == null || seasonID == null || dayID == null) {
-            return gson.toJson(Map.of(
-                    "message", "Missing required parameters",
-                    "response_code", 400
-            ));
-        }
-
-        // Construct SortKey prefix based on the request
-        String skPrefix = "RESORT#" + resortID + "#SEASON#" + seasonID + "#DAY#" + dayID;
+        // Construct GSI_PK for the query
+        String gsiPK = "RESORT#" + resortID + "#SEASON#" + seasonID + "#DAY#" + dayID;
 
         try {
-            // Query DynamoDB for items matching the PK and SK prefix
+            // Query DynamoDB using the GSI
             QueryResponse result = dynamoDbClient.query(QueryRequest.builder()
                     .tableName(TABLE_NAME)
-                    .keyConditionExpression(PartitionKey + " = :pk AND begins_with(" + SortKey + ", :skPrefix)")
+                    .indexName("GSI_PK-index") // Use the GSI to query
+                    .keyConditionExpression("GSI_PK = :gsiPK")
                     .expressionAttributeValues(Map.of(
-                            ":pk", AttributeValue.builder().s("SKIER").build(), // Fixed PK
-                            ":skPrefix", AttributeValue.builder().s(skPrefix).build()
+                            ":gsiPK", AttributeValue.builder().s(gsiPK).build()
                     ))
-                    .projectionExpression(PartitionKey) // Retrieve only the PK (skier IDs)
                     .build());
 
-            // Use a HashSet to count unique skier IDs
-            Set<String> uniqueSkiers = new HashSet<>();
-            for (Map<String, AttributeValue> item : result.items()) {
-                uniqueSkiers.add(item.get(PartitionKey).s());
-            }
+            // Count the number of unique skiers based on the primary keys (PK)
+            long numUniqueSkiers = result.items().stream()
+                    .map(item -> item.get("PK").s()) // Extract the PK (skierID) field
+                    .distinct()
+                    .count();
 
-            // Build the success response
+            // Return the result as a JSON response
             return gson.toJson(Map.of(
-                    "time", "Mission Ridge", // Placeholder for "time"
-                    "numSkiers", uniqueSkiers.size(),
+                    "resort", resortID,
+                    "numSkiers", numUniqueSkiers,
                     "response_code", 200
             ));
-
         } catch (Exception e) {
             e.printStackTrace();
-            // Return error response in case of exception
+            // Return error response with type and message
             return gson.toJson(Map.of(
-                    "message", "Error retrieving unique skiers",
-                    "response_code", 500
+                    "response_code", 500,
+                    "message", "Error retrieving number of unique skiers"
             ));
         }
     }
@@ -255,7 +245,7 @@ public class LiftRideGetConsumer {
                 Map<String, Integer> seasonVerticals = new HashMap<>();
                 for (Map<String, AttributeValue> item : result.items()) {
                     String sortKey = item.get(SortKey).s();
-                    String seasonID = sortKey.split("#")[2]; // Extract the seasonID from the sort key
+                    String seasonID = sortKey.split("#")[3]; // Extract the seasonID from the sort key
                     int vertical = Integer.parseInt(item.getOrDefault("vertical", AttributeValue.builder().n("0").build()).n());
                     seasonVerticals.put(seasonID, seasonVerticals.getOrDefault(seasonID, 0) + vertical);
                 }

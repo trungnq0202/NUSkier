@@ -22,7 +22,7 @@ public class LiftRideConsumer {
     private static final int BATCH_SIZE = 25;  // Number of messages per Redis batch
     private static final int MAX_RETRIES = 5;  // Retry attempts for Redis operations
 
-    private static final String TABLE_NAME = "SkierTable";
+    private static final String TABLE_NAME = "SkierNewTable";
     private static final String PartitionKey = "PK";
     private static final String SortKey = "SK";
     private static final String GSIPartitionKey = "GSI_PK";
@@ -128,15 +128,15 @@ public class LiftRideConsumer {
                     String sk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID() + "#DAY#" + liftRide.getDayID();
 
                     // GSI Keys
-//                    String gsiPk = "SKIER#" + liftRide.getSkierID();
+                    String gsiPk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID() + "#DAY#" + liftRide.getDayID();
 //                    String gsiSk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID();
 
                     // Item Attributes
                     Map<String, AttributeValue> attributes = Map.of(
                             "time", AttributeValue.builder().s(String.valueOf(liftRide.getTime())).build(),
                             "liftID", AttributeValue.builder().s(String.valueOf(liftRide.getLiftID())).build(),
-                            "vertical", AttributeValue.builder().n(String.valueOf(liftRide.getLiftID() * 10)).build()
-//                            GSIPartitionKey, AttributeValue.builder().s(gsiPk).build(),
+                            "vertical", AttributeValue.builder().n(String.valueOf(liftRide.getLiftID() * 10)).build(),
+                            GSIPartitionKey, AttributeValue.builder().s(gsiPk).build()
 //                            GSISortKey, AttributeValue.builder().s(gsiSk).build()
                     );
 
