@@ -14,6 +14,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 @WebServlet(value = "/skiers/*")
 public class SkierServlet extends HttpServlet {
@@ -22,7 +24,6 @@ public class SkierServlet extends HttpServlet {
     // RabbitMQ constants
     private static final String POST_QUEUE_NAME = "skiersQueue";
     private static final String GET_QUEUE_NAME = "skiersGetQueue";
-    private static final String GET_RESPONSE_QUEUE_NAME = "skiersGetResponseQueue";
     private static final String GET_TOTAL_DAY_VERTICAL_MESSAGE_KEY = "GET_DAY_VERTICAL";
     private static final String GET_TOTAL_RESORT_VERTICAL_MESSAGE_KEY = "GET_RESORT_VERTICAL";
 
@@ -166,36 +167,56 @@ public class SkierServlet extends HttpServlet {
     }
 
     private String sendGetRequestToQueue(String message) throws Exception {
-        try (Channel channel = channelPool.borrowObject()) {
-            String correlationId = java.util.UUID.randomUUID().toString();
+        Channel channel = null;
+        final long TIMEOUT_MS = 10000; // Timeout duration in milliseconds
+        final String correlationId = java.util.UUID.randomUUID().toString();
 
-            // Set up the message properties with reply-to and correlation ID
+        try {
+            channel = channelPool.borrowObject(); // Borrow channel from pool
+
+            // Create a unique, temporary reply queue for this request
+            String replyQueueName = channel.queueDeclare("", false, true, true, null).getQueue();
+
             AMQP.BasicProperties props = new AMQP.BasicProperties
                     .Builder()
                     .correlationId(correlationId)
-                    .replyTo(GET_RESPONSE_QUEUE_NAME) // Use shared reply queue
+                    .replyTo(replyQueueName)
                     .build();
 
-//            channel.queueDeclare(GET_QUEUE_NAME, true, false, false, null);
-//            channel.queueDeclare(GET_RESPONSE_QUEUE_NAME, true, false, false, null);
-
-            // Publish the GET request to the RabbitMQ queue
+            // Publish request to the request queue
             channel.basicPublish("", GET_QUEUE_NAME, props, message.getBytes(StandardCharsets.UTF_8));
+            System.out.println("Published request with correlationId: " + correlationId);
 
-            // Wait for the response from the shared reply queue
             final String[] responseHolder = new String[1];
-            channel.basicConsume(GET_RESPONSE_QUEUE_NAME, true, (consumerTag, delivery) -> {
-                if (delivery.getProperties().getCorrelationId().equals(correlationId)) {
-                    responseHolder[0] = new String(delivery.getBody(), StandardCharsets.UTF_8);
-                }
-            }, consumerTag -> {});
+            CountDownLatch latch = new CountDownLatch(1);
 
-            // Poll for the response (timeout logic can be added if needed)
-            while (responseHolder[0] == null) {
-                Thread.sleep(10); // Sleep for a short duration to wait for the response
+            // Consume from the temporary reply queue
+            String consumerTag = channel.basicConsume(replyQueueName, true, (ct, delivery) -> {
+                if (correlationId.equals(delivery.getProperties().getCorrelationId())) {
+                    responseHolder[0] = new String(delivery.getBody(), StandardCharsets.UTF_8);
+                    latch.countDown();
+                }
+            }, ct -> {
+                System.err.println("Consumer canceled: " + ct);
+            });
+
+            // Wait for response or timeout
+            if (!latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                // Timeout
+                channel.basicCancel(consumerTag);
+                System.err.println("Timeout waiting for response with correlationId: " + correlationId);
+                return null;
             }
 
+            channel.basicCancel(consumerTag);
             return responseHolder[0];
+        } catch (Exception e) {
+            System.err.println("Error in sendGetRequestToQueue: " + e.getMessage());
+            throw e;
+        } finally {
+            if (channel != null) {
+                channelPool.returnObject(channel);
+            }
         }
     }
 

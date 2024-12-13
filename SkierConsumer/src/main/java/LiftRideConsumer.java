@@ -22,7 +22,7 @@ public class LiftRideConsumer {
     private static final int BATCH_SIZE = 25;  // Number of messages per Redis batch
     private static final int MAX_RETRIES = 5;  // Retry attempts for Redis operations
 
-    private static final String TABLE_NAME = "SkierNewTable";
+    private static final String TABLE_NAME = "SkierTable";
     private static final String PartitionKey = "PK";
     private static final String SortKey = "SK";
     private static final String GSIPartitionKey = "GSI_PK";
@@ -125,7 +125,7 @@ public class LiftRideConsumer {
 
                     // Primary Key (PK) and Sort Key (SK)
                     String pk = "SKIER#" + liftRide.getSkierID();
-                    String sk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID() + "#DAY#" + liftRide.getDayID();
+                    String sk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID() + "#DAY#" + liftRide.getDayID() + "#LIFT#" + liftRide.getLiftID();
 
                     // GSI Keys
                     String gsiPk = "RESORT#" + liftRide.getResortID() + "#SEASON#" + liftRide.getSeasonID() + "#DAY#" + liftRide.getDayID();

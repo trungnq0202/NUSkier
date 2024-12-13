@@ -21,7 +21,6 @@ public class ResortServlet extends HttpServlet {
 
     // RabbitMQ constants
     private static final String GET_QUEUE_NAME = "skiersGetQueue";
-    private static final String GET_RESPONSE_QUEUE_NAME = "skiersGetResponseQueue";
     private static final String GET_NUM_UNIQUE_SKIERS_MESSAGE_KEY = "GET_NUM_UNIQUE_SKIERS";
 
     // Connections

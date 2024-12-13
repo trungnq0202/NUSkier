@@ -17,9 +17,10 @@ public class LiftRideGetConsumer {
     private static final int NUM_CONSUMER_THREADS = 600;
     private static final int BATCH_SIZE = 25;  // Number of messages per Redis batch
     private static final int MAX_RETRIES = 5;  // Retry attempts for Redis operations
+    private static final int REDIS_TTL = 1000;
 
     // DynamoDB constants
-    private static final String TABLE_NAME = "SkierNewTable";
+    private static final String TABLE_NAME = "SkierTable";
     private static final String PartitionKey = "PK";
     private static final String SortKey = "SK";
 
@@ -114,7 +115,6 @@ public class LiftRideGetConsumer {
     private String processGetRequest(Map<String, Object> request) {
         try {
             String type = (String) request.get("type");
-//            System.out.println("Request type: " + type);
             if (GET_TOTAL_DAY_VERTICAL_MESSAGE_KEY.equals(type)) {
                 return getDayVertical(request);
             }
@@ -141,16 +141,14 @@ public class LiftRideGetConsumer {
         String dayID = (String) request.get("dayID");
 
         String gsiPK = "RESORT#" + resortID + "#SEASON#" + seasonID + "#DAY#" + dayID;
-        String redisKey = "uniqueSkiers:" + gsiPK; // Redis cache key
+        String redisKey = "uniqueSkiers:" + gsiPK;
 
         try (Jedis jedis = jedisPool.getResource()) {
-            // Check Redis for cached data
             String cachedResult = jedis.get(redisKey);
             if (cachedResult != null) {
-                return cachedResult; // Return cached result
+                return cachedResult;
             }
 
-            // Cache miss: Query DynamoDB
             QueryRequest queryRequest = QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .indexName("GSI_PK-index")
@@ -174,14 +172,12 @@ public class LiftRideGetConsumer {
 
             long numUniqueSkiers = uniqueSkiers.size();
 
-            // Create the response JSON
             String responseJson = gson.toJson(Map.of(
                     "resort", resortID,
                     "numSkiers", numUniqueSkiers,
                     "response_code", 200
             ));
 
-            // Cache the result in Redis with a TTL (e.g., 5 minutes)
             jedis.setex(redisKey, 1000, responseJson);
 
             return responseJson;
@@ -199,12 +195,16 @@ public class LiftRideGetConsumer {
 
     // API2: GET/skiers/{resortID}/seasons/{seasonID}/days/{dayID}/skiers/{skierID}: get ski day vertical for a skier
     private String getDayVertical(Map<String, Object> request) {
-        // Construct PK and SK prefix based on the request
         String pk = "SKIER#" + request.get("skierID");
         String skPrefix = "RESORT#" + request.get("resortID") + "#SEASON#" + request.get("seasonID") + "#DAY#" + request.get("dayID");
+        String redisKey = "dayVertical:" + pk + ":" + skPrefix;
 
-        try {
-            // Query DynamoDB for all items matching PK and SK prefix
+        try (Jedis jedis = jedisPool.getResource()) {
+            String cachedResult = jedis.get(redisKey);
+            if (cachedResult != null) {
+                return cachedResult;
+            }
+
             QueryResponse result = dynamoDbClient.query(QueryRequest.builder()
                     .tableName(TABLE_NAME)
                     .keyConditionExpression(PartitionKey + " = :pk AND begins_with(" + SortKey + ", :skPrefix)")
@@ -214,30 +214,31 @@ public class LiftRideGetConsumer {
                     ))
                     .build());
 
-            // Check if no items are found
             if (result.items().isEmpty()) {
-                // Return -1 and message for no data
-                return gson.toJson(Map.of(
+                String responseJson = gson.toJson(Map.of(
                         "total_vertical", -1,
-                        "response_code", 404,
+                        "response_code", 200,
                         "message", "No data found"
                 ));
+                jedis.setex(redisKey, REDIS_TTL, responseJson); // Cache no-data response
+                return responseJson;
             }
 
-            // Iterate through the results and sum up the "vertical" field
             int totalVertical = result.items().stream()
                     .mapToInt(item -> Integer.parseInt(item.getOrDefault("vertical", AttributeValue.builder().n("0").build()).n()))
                     .sum();
 
-            // Return total vertical in the response
-            return gson.toJson(Map.of(
+            String responseJson = gson.toJson(Map.of(
                     "response_code", 200,
                     "total_vertical", totalVertical
             ));
 
+            jedis.setex(redisKey, REDIS_TTL, responseJson);
+
+            return responseJson;
+
         } catch (Exception e) {
             e.printStackTrace();
-            // Return error response with type and message
             return gson.toJson(Map.of(
                     "total_vertical", -1,
                     "response_code", 500,
@@ -246,22 +247,25 @@ public class LiftRideGetConsumer {
         }
     }
 
+
     // API3: /skiers/{skierID}/vertical
     private String getResortVertical(Map<String, Object> request) {
-        // Extract skierID and resortID from the request
         String skierID = (String) request.get("skierID");
         String pk = "SKIER#" + skierID;
-
-        // Parse the resorts and seasons from the request
         List<String> resorts = (List<String>) request.get("resorts");
         List<String> seasons = (List<String>) request.get("seasons");
 
-        String resortID = resorts.get(0); // Assume only one resortID is provided
-        List<Map<String, Object>> seasonResults = new ArrayList<>();
+        String resortID = resorts.get(0);
+        String redisKey = "resortVertical:" + skierID + ":" + resortID + (seasons != null ? ":" + String.join(",", seasons) : "");
 
-        try {
+        try (Jedis jedis = jedisPool.getResource()) {
+            String cachedResult = jedis.get(redisKey);
+            if (cachedResult != null) {
+                return cachedResult;
+            }
+
+            List<Map<String, Object>> seasonResults = new ArrayList<>();
             if (seasons == null || seasons.isEmpty()) {
-                // If no seasons are specified, fetch all seasons for the specified resort
                 String skPrefix = "RESORT#" + resortID;
 
                 QueryResponse result = dynamoDbClient.query(QueryRequest.builder()
@@ -288,7 +292,6 @@ public class LiftRideGetConsumer {
                     ));
                 }
             } else {
-                // Iterate over the list of seasons to filter
                 for (String season : seasons) {
                     String skPrefix = "RESORT#" + resortID + "#SEASON#" + season;
 
@@ -312,14 +315,16 @@ public class LiftRideGetConsumer {
                 }
             }
 
-            // Build the response
-            return gson.toJson(Map.of(
+            String responseJson = gson.toJson(Map.of(
                     "resorts", seasonResults,
                     "response_code", 200
             ));
+
+            jedis.setex(redisKey, REDIS_TTL, responseJson);
+            return responseJson;
+
         } catch (Exception e) {
             e.printStackTrace();
-            // Return error response in case of exceptions
             return gson.toJson(Map.of(
                     "message", "Error retrieving resort vertical",
                     "response_code", 500
