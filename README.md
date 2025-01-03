@@ -85,6 +85,7 @@ The system consists of:
   ![GET API2 load testing results](imgs/GET2-results.png)
   ![GET API3 load testing results](imgs/GET3-results.png)
   </br>
+
   - RabbitMQ
   ![GET RMQ load testing results](imgs/GET-rmq-results.png)
 
@@ -95,8 +96,9 @@ The system consists of:
   - Throughput: 2900 requests/second -->
   ![POST API load testing results](imgs/POST-results.png)
   </br>
+  
 - RabbitMQ
-  ![GET RMQ load testing results](imgs/POST-rmq-results.png)
+  ![POST RMQ load testing results](imgs/POST-rmq-results.png)
 
 <!-- ## Performance Optimizations
 - Implemented multithreaded channel pooling for RabbitMQ to minimize channel creation overhead, keeping queue sizes consistently below ~1,000 messages.
